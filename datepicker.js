@@ -693,13 +693,13 @@ var DatePicker = new Class({
 		return f;
 	},
 
-	// This does not (and probably cannot) work with all possible formats.
-	// It also fails in special cases, for example, if the current date is the 31st of some month,
-	// and the format calls for setting the month to one with less than 31 days, you will get an unexpected result
+	// This may fail in rare cases with certain weird formats
+	// Such as, if numeric values are placed ajacent to one another
+	// It seems to be nearly foolproof though
 	unformat: function(t, format) {
 		var opt = this.options,
-			d = new Date(),
 			a = {},
+			d = {},
 			esc = function (s) { return s.replace(/[\-\[\]\/\{\}\(\)\*\+\?\.\\\^\$\|]/g, "\\$&"); },
 			c, m, i, v, r;
 
@@ -707,65 +707,113 @@ var DatePicker = new Class({
 
 		for (i = 0; i < format.length; i++) {
 			c = format.charAt(i);
-			switch(c) {
-				case '\\': r = null; i++; break;
-				case 'y': r = '[0-9]{2}'; break;
-				case 'Y': r = '[0-9]{4}'; break;
-				case 'm': r = '0[1-9]|1[012]'; break;
-				case 'n': r = '[1-9]|1[012]'; break;
-				case 'M': r = opt.text.shortMonths.map(esc).join('|'); break;
-				case 'F': r = '[A-Za-z]+'; break;
-				case 'd': r = '0[1-9]|[12][0-9]|3[01]'; break;
-				case 'j': r = '[1-9]|[12][0-9]|3[01]'; break;
-				case 'D': r = opt.text.shortDays.map(esc).join('|'); break;
-				case 'l': r = '[A-Za-z]+'; break;
-				case 'G':
-				case 'H':
-				case 'g':
-				case 'h': r = '[0-9]{1,2}'; break;
-				case 'a': r = '(am|pm)'; break;
-				case 'A': r = '(AM|PM)'; break;
-				case 'i':
-				case 's': r = '[012345][0-9]'; break;
-				case 'U': r = '-?[0-9]+$'; break;
-				default:  r = null;
+
+			if (c == '\\') {
+				i++;
+				r = null;
+			} else {
+				r = this.regexForChar(i, format);
 			}
 
 			if (!!r) {
 				m = t.match('^'+r);
 				if (!!m) {
-					a[c] = m[0];
+					a[c] = m[1];
 					t = t.substring(a[c].length);
 				} else {
 					if (opt.debug) alert("Fatal Error in DatePicker\n\nUnexpected format at: '"+t+"' expected format character '"+c+"' (pattern '"+r+"')");
-					return d;
+					return new Date;
 				}
 			} else {
 				t = t.substring(1);
 			}
 		}
 
-		for (c in a) {
-			v = a[c];
-			switch(c) {
-				case 'y': d.setFullYear(v < 30 ? 2000 + v.toInt() : 1900 + v.toInt()); break; // assume between 1930 - 2029
-				case 'Y': d.setFullYear(v); break;
-				case 'm':
-				case 'n': d.setMonth(v - 1); break;
-				case 'M': d.setMonth(opt.text.shortMonths.indexOf(v)); break;
-				case 'F': d.setMonth(opt.text.months.indexOf(v)); break;
-				case 'd':
-				case 'j': d.setDate(v); break;
-				case 'G':
-				case 'H': d.setHours(v); break;
-				case 'g':
-				case 'h': if (a['a'] == 'pm' || a['A'] == 'PM') { d.setHours(v == 12 ? 0 : v.toInt() + 12); } else { d.setHours(v); } break;
-				case 'i': d.setMinutes(v); break;
-				case 's': d.setSeconds(v); break;
-				case 'U': return new Date(v.toInt() * 1000);
-			}
-		};
+		// If we have a timestamp, that's all we need.
+		if (!!a['U']) { return new Date(+a['U'] * 1000); }
 
-		return d;
+		if (!!a['Y']) {
+			d.year = +a['Y'];
+		} else if (!!a['y']) {
+			d.year = +a['y'];
+			d.year += d.year < 30 ? 2000 : 1900;
+		}
+
+		v = a['m'] || a['n'];
+		if (!!v || v === 0) {
+			d.month = v - 1;
+		} else if (!!a['M']) {
+			d.month = opt.text.shortMonths.indexOf(v);
+		} else if (!!a['F']) {
+			d.month = opt.text.months.indexOf(v);
+		}
+
+		v = a['d'] || a['j'];
+		if (!!v || v === 0) {
+			d.day = +v;
+		}
+
+		v = a['G'] || a['H'];
+		if (!!v || v === 0) {
+			d.hours = +v;
+		}
+
+		v = a['g'] || a['h'];
+		if (!!v || v === 0) {
+			d.hours = +v;
+			if ((a['a'] || a['A']) && (a['g'] || a['h']).toLowerCase() == 'pm') {
+				d.hours += 12;
+			}
+		}
+
+		if (!!a['i']) {
+			d.minutes = +a['i'];
+		}
+
+		if (!!a['s']) {
+			d.seconds = +a['s'];
+		}
+
+		return this.objectToDate(d);
+	},
+
+	// This gets a little complicated for 'U' but it's necessary for extremely crazy formats
+	regexForChar: function (i, format, head) {
+		var next = null, ii = 0;
+		switch(format.charAt(i)) {
+			case head: return '(\\1)'; // special case, backreference to the first group
+			case 'y': return '([0-9]{2})';
+			case 'Y': return '([0-9]{4})';
+			case 'm': return '(0[1-9]|1[012])';
+			case 'n': return '([1-9]|1[012])';
+			case 'M': return '(' + opt.text.shortMonths.map(esc).join('|') + ')';
+			case 'F': return '(' + opt.text.months.map(esc).join('|') + ')';
+			case 'd': return '(0[1-9]|[12][0-9]|3[01])';
+			case 'j': return '([1-9]|[12][0-9]|3[01])';
+			case 'D': return '(' + opt.text.shortDays.map(esc).join('|') + ')';
+			case 'l': return '(' + opt.text.days.map(esc).join('|') + ')';
+			case 'G': return '([0-9]|[1][0-9]|2[0-3])';
+			case 'H': return '([01][0-9]|2[0-3])';
+			case 'g': return '([1-9]|1[0-2])';
+			case 'h': return '(0[1-9]|1[0-2])';
+			case 'a': return '(am|pm)';
+			case 'A': return '(AM|PM)';
+			case 'i':
+			case 's': return '([012345][0-9])';
+			case 'U':
+				var r = '(-?[0-9]+)';
+				for (ii = i + 1; ii < format.length; ii++) {
+					next = this.regexForChar(ii, format, 'U');
+					if (next === null) {
+						r += format.charAt(ii);
+					} else {
+						r += next;
+						break;
+					}
+				}
+				return r;
+		}
+
+		return null;
 	}
 });
