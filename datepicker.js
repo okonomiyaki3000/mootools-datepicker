@@ -49,10 +49,15 @@ var DatePicker = new Class({
 
 	options: {
 		pickerClass: 'datepicker',
-		days: ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'],
-		months: ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'],
-		dayShort: 2,
-		monthShort: 3,
+		text: {
+			days: ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'],
+			shortDays: ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'],
+			months: ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'],
+			shortMonths: ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'],
+			timePrompt: 'Select a time',
+			okButton: 'OK'
+		},
+
 		startDay: 1, // Sunday (0) through Saturday (6) - be aware that this may affect your layout, since the days on the right might have a different margin
 		timePicker: false,
 		timePickerOnly: false,
@@ -62,7 +67,7 @@ var DatePicker = new Class({
 		allowEmpty: false,
 		inputOutputFormat: 'U', // default to unix timestamp
 		animationDuration: 400,
-		useFadeInOut: !Browser.Engine.trident, // dont animate fade-in/fade-out for IE
+		useFadeInOut: !Browser.ie, // dont animate fade-in/fade-out for IE
 		startView: 'month', // allowed values: {time, month, year, decades}
 		positionOffset: { x: 0, y: 0 },
 		minDate: null, // { date: '[date-string]', format: '[date-string-interpretation-format]' }
@@ -74,11 +79,22 @@ var DatePicker = new Class({
 	initialize: function(attachTo, options) {
 		this.attachTo = attachTo;
 		this.setOptions(options).attach();
-		if (this.options.timePickerOnly) {
-			this.options.timePicker = true;
-			this.options.startView = 'time';
+
+		var opt = this.options;
+
+		// for BC
+		if (!!opt.days) { opt.text.days = opt.days; }
+		if (!!opt.months) { opt.text.days = opt.months; }
+		if (!!opt.dayShort) { opt.text.shortDays = opt.text.days.map(function (t) { return t.substring(0, opt.dayShort); }); }
+		if (!!opt.monthShort) { opt.text.shortMonths = opt.text.months.map(function (t) { return t.substring(0, opt.monthShort); }); }
+
+		if (opt.timePickerOnly) {
+			opt.timePicker = true;
+			opt.startView = 'time';
 		}
+
 		this.formatMinMaxDates();
+
 		document.addEvent('mousedown', this.close.bind(this));
 	},
 
@@ -341,9 +357,8 @@ var DatePicker = new Class({
 		// No next or previous for time.
 		this.limit.left = this.limit.right = true;
 
-		// TODO: make 'Select a time' localizable
 		this.picker.getElement('.titleText')
-			.set('text', this.options.timePickerOnly ? 'Select a time' : this.format(this.d, 'j M, Y'));
+			.set('text', this.options.timePickerOnly ? this.options.text.timePrompt : this.format(this.d, 'j M, Y'));
 
 		new Element('input.hour[type=text]')
 			.set('value', this.leadZero(this.d.getHours()))
@@ -359,8 +374,7 @@ var DatePicker = new Class({
 
 		new Element('div.separator[text=":"]').inject(container);
 
-		// TODO: make 'OK' localizable
-		new Element('input.ok[type=submit]', {value: 'OK'})
+		new Element('input.ok[type=submit]', {value: this.options.text.okButton})
 			.addEvent('click', function(e) {
 					e.stop();
 					var d = this.dateToObject(this.d);
@@ -393,7 +407,7 @@ var DatePicker = new Class({
 		prev.setDate(0); // Tricky way to set to the last day of the previous month.
 		this.limit.left = this.limited('date', prev);
 
-		this.picker.getElement('.titleText').set('text', opt.months[month] + ' ' + this.d.getFullYear());
+		this.picker.getElement('.titleText').set('text', this.format(this.d, 'F Y'));
 
 		this.d.setDate(1);
 		while (this.d.getDay() != opt.startDay) {
@@ -401,7 +415,7 @@ var DatePicker = new Class({
 		}
 
 		for (d = opt.startDay; d < (opt.startDay + 7); d++) {
-			new Element('div.title.day.day' + (d % 7)).set('text', opt.days[(d % 7)].substring(0,opt.dayShort)).inject(titles);
+			new Element('div.title.day.day' + (d % 7)).set('text', opt.text.shortDays[d % 7]).inject(titles);
 		}
 
 		for (i = 0; i < 42; i++) {
@@ -483,7 +497,7 @@ var DatePicker = new Class({
 			}
 
 			new Element('div.' + classes.join('.'))
-				.set('text', opt.monthShort ? opt.months[i].substring(0, opt.monthShort) : opt.months[i])
+				.set('text', opt.text[opt.monthShort ? 'shortMonths' : 'months'][i])
 				.addEvent('click', e.bind(this))
 				.inject(container);
 		}
@@ -658,12 +672,12 @@ var DatePicker = new Class({
 				case 'Y': f += t.getFullYear(); break;
 				case 'm': f += this.leadZero(m + 1); break;
 				case 'n': f += (m + 1); break;
-				case 'M': f += opt.months[m].substring(0, opt.monthShort); break;
-				case 'F': f += opt.months[m]; break;
+				case 'M': f += opt.text.shortMonths[m]; break;
+				case 'F': f += opt.text.months[m]; break;
 				case 'd': f += this.leadZero(t.getDate()); break;
 				case 'j': f += t.getDate(); break;
-				case 'D': f += opt.days[t.getDay()].substring(0, opt.dayShort); break;
-				case 'l': f += opt.days[t.getDay()]; break;
+				case 'D': f += opt.text.shortDays[t.getDay()]; break;
+				case 'l': f += opt.text.days[t.getDay()]; break;
 				case 'G': f += h; break;
 				case 'H': f += this.leadZero(h); break;
 				case 'g': f += (h % 12 ? h % 12 : 12); break;
@@ -686,6 +700,7 @@ var DatePicker = new Class({
 		var opt = this.options,
 			d = new Date(),
 			a = {},
+			esc = function (s) { return s.replace(/[\-\[\]\/\{\}\(\)\*\+\?\.\\\^\$\|]/g, "\\$&"); },
 			c, m, i, v, r;
 
 		t = t.toString();
@@ -698,11 +713,11 @@ var DatePicker = new Class({
 				case 'Y': r = '[0-9]{4}'; break;
 				case 'm': r = '0[1-9]|1[012]'; break;
 				case 'n': r = '[1-9]|1[012]'; break;
-				case 'M': r = '[A-Za-z]{' + opt.monthShort + '}'; break;
+				case 'M': r = opt.text.shortMonths.map(esc).join('|'); break;
 				case 'F': r = '[A-Za-z]+'; break;
 				case 'd': r = '0[1-9]|[12][0-9]|3[01]'; break;
 				case 'j': r = '[1-9]|[12][0-9]|3[01]'; break;
-				case 'D': r = '[A-Za-z]{' + opt.dayShort + '}'; break;
+				case 'D': r = opt.text.shortDays.map(esc).join('|'); break;
 				case 'l': r = '[A-Za-z]+'; break;
 				case 'G':
 				case 'H':
@@ -737,9 +752,8 @@ var DatePicker = new Class({
 				case 'Y': d.setFullYear(v); break;
 				case 'm':
 				case 'n': d.setMonth(v - 1); break;
-				// FALL THROUGH NOTICE! "M" has no break, because "v" now is the full month (eg. 'February'), which will work with the next format "F":
-				case 'M': v = opt.months.filter(function(item, index) { return item.substring(0,opt.monthShort) == v }.bind(this))[0];
-				case 'F': d.setMonth(opt.months.indexOf(v)); break;
+				case 'M': d.setMonth(opt.text.shortMonths.indexOf(v)); break;
+				case 'F': d.setMonth(opt.text.months.indexOf(v)); break;
 				case 'd':
 				case 'j': d.setDate(v); break;
 				case 'G':
